@@ -55,6 +55,8 @@
       border-bottom: 1px solid var(--border);
     }
     .header h1 { font-size: 1.05rem; font-weight: 700; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .syncing { animation: spin 1s linear infinite; }
     .header-btn {
       background: none; border: none; color: var(--primary);
       font-size: .85rem; font-weight: 600; cursor: pointer; padding: 6px 8px;
@@ -427,7 +429,11 @@
 <body data-theme="dark">
   <div class="header">
     <h1>クイズ王【個人成績管理】</h1>
-    <button class="header-btn" onclick="switchMode('settings')">設定</button>
+    <div style="display:flex;align-items:center;gap:2px">
+      <span id="header-editor-name" class="hidden" style="font-size:.8rem;color:var(--text-secondary);margin-right:2px;white-space:nowrap"></span>
+      <button class="header-btn" id="header-sync-btn" onclick="syncFromHeader()" title="今すぐ同期" style="font-size:1.05rem;line-height:1">↻</button>
+      <button class="header-btn" onclick="switchMode('settings')">設定</button>
+    </div>
   </div>
 
   <div class="mode-bar" id="mode-bar">
@@ -649,23 +655,33 @@
       </div>
 
       <div class="card">
-        <div class="card-title">管理者パスワード</div>
-        <div id="admin-card-body"></div>
+        <div class="card-title">画面ごとの入室制限</div>
+        <div class="text-sm text-muted mb-2">編集画面ごとに、入れる人を制限できます。制限をオンにした画面は、下でチェックした人だけが開けます。「管理者」は、メンバーとしてログインせずに入った場合です。名前で細かく分けるには、上のログイン設定をオンにしてください。編集設定はいつでも管理者が開けるので、締め出されることはありません。</div>
+        <div id="page-access-list"></div>
       </div>
 
       <div class="card">
-        <div class="card-title">編集メンバー管理</div>
-        <div id="editor-list"></div>
-        <div class="form-group">
-          <label class="form-label">名前</label>
-          <input type="text" id="ed-new-name" placeholder="メンバーの名前">
+        <button class="accordion-head" onclick="toggleAccordion('admin-card-wrap', this)">管理者パスワード <span class="acc-arrow">▾</span></button>
+        <div id="admin-card-wrap" class="hidden">
+          <div id="admin-card-body" style="margin-top:8px"></div>
         </div>
-        <div class="form-group">
-          <label class="form-label">パスワード（その人に渡すもの・4文字以上）</label>
-          <input type="text" id="ed-new-pass" placeholder="例：quiz1234">
+      </div>
+
+      <div class="card">
+        <button class="accordion-head" onclick="toggleAccordion('editor-card-wrap', this)">編集メンバー管理 <span class="acc-arrow">▾</span></button>
+        <div id="editor-card-wrap" class="hidden">
+          <div id="editor-list" style="margin-top:8px"></div>
+          <div class="form-group">
+            <label class="form-label">名前</label>
+            <input type="text" id="ed-new-name" placeholder="メンバーの名前">
+          </div>
+          <div class="form-group">
+            <label class="form-label">パスワード（その人に渡すもの・4文字以上）</label>
+            <input type="text" id="ed-new-pass" placeholder="例：quiz1234">
+          </div>
+          <button class="btn btn-primary btn-block" onclick="addEditor()">メンバーを追加</button>
+          <div class="text-sm text-muted mt-2">パスワードを他のメンバーに教えた場合、その名前で行われた編集は、教えた人の責任になります。</div>
         </div>
-        <button class="btn btn-primary btn-block" onclick="addEditor()">メンバーを追加</button>
-        <div class="text-sm text-muted mt-2">パスワードを他のメンバーに教えた場合、その名前で行われた編集は、教えた人の責任になります。</div>
       </div>
 
       <div class="card">
@@ -678,10 +694,16 @@
       <div class="card">
         <div class="card-title">データ管理</div>
         <div class="help-text mb-2">
-          データのエクスポート／インポートは「⚙設定」の「データ管理」から行えます。<br>
+          ・<strong>エクスポート</strong>：バックアップ用のJSONファイルを保存します。機種変更前に必ず実行してください。<br>
+          ・<strong>インポート</strong>：エクスポートしたファイルからデータを復元します。現在のデータは上書きされ、クラウドにも反映されて全端末に行き渡ります（メンバー・パスワード・編集履歴は今のものが保持されます）。<br>
           ・<strong>全データを削除</strong>：参加者・成績・スケジュールなどすべてを消します。取り消せません（編集履歴とメンバー情報は残ります）。
         </div>
-        <button class="btn btn-danger btn-block" onclick="confirmReset()">🗑️ 全データを削除</button>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <button class="btn btn-outline btn-block" onclick="exportData()">📤 データをエクスポート</button>
+          <button class="btn btn-outline btn-block" onclick="document.getElementById('import-file').click()">📥 データをインポート</button>
+          <input type="file" id="import-file" accept=".json" class="hidden" onchange="importData(event)">
+          <button class="btn btn-danger btn-block" onclick="confirmReset()">🗑️ 全データを削除</button>
+        </div>
       </div>
     </div>
 
@@ -730,17 +752,10 @@
       <div class="card">
         <div class="card-title">データ管理</div>
         <div class="help-text mb-2">
-          データはクラウドに自動保存され、全ての端末で同じ内容が共有されます（この端末の中にも予備を保存しています）。<br>
-          ・<strong>エクスポート</strong>：バックアップ用のJSONファイルを保存します。機種変更前に必ず実行してください。<br>
-          ・<strong>インポート</strong>：エクスポートしたファイルからデータを復元します。現在のデータは上書きされ、クラウドにも反映されて全端末に行き渡ります（メンバー・パスワード・編集履歴は今のものが保持されます）。
+          データはクラウドに自動保存され、全ての端末で同じ内容が共有されます（この端末の中にも予備を保存しています）。手動で同期したいときは、画面上の ↻ ボタンから行えます。<br>
+          バックアップの書き出し（エクスポート）と復元（インポート）は、編集モードの「編集設定」にある「データ管理」から行えます。
         </div>
-        <div id="cloud-status" class="text-sm text-muted mb-2">☁️ クラウド同期：接続中…</div>
-        <div style="display:flex;flex-direction:column;gap:8px">
-          <button class="btn btn-outline btn-block" onclick="cloudSyncNow()">🔄 今すぐ同期</button>
-          <button class="btn btn-outline btn-block" onclick="exportData()">📤 データをエクスポート</button>
-          <button class="btn btn-outline btn-block" onclick="document.getElementById('import-file').click()">📥 データをインポート</button>
-          <input type="file" id="import-file" accept=".json" class="hidden" onchange="importData(event)">
-        </div>
+        <div id="cloud-status" class="text-sm text-muted">☁️ クラウド同期：接続中…</div>
       </div>
 
       <div class="card">
@@ -1004,7 +1019,8 @@
       'Ver.2.2　名前＋個人パスワード制と編集履歴を導入・編集設定を管理者専用に・データ管理を編集設定へ移設',
       'Ver.2.3　データのエクスポート／インポートを共通設定へ移設（閲覧側からデータを受け取り可能に）・全データ削除は編集設定に継続配置',
       'Ver.2.4　エクスポートを改善：iPhoneでは共有シート（保存・LINE送信）を使い、ダウンロード処理も安定化',
-      'Ver.3.0　クラウド同期に対応：開くと最新のデータを読み込み、保存すると自動でクラウドに送られ、全端末で同じデータを共有'
+      'Ver.3.0　クラウド同期に対応：開くと最新のデータを読み込み、保存すると自動でクラウドに送られ、全端末で同じデータを共有',
+      'Ver.3.1　書き出し/読み込みを編集設定へ集約・同期ボタンをヘッダーの↻に集約しログイン中の名前を表示・管理者/メンバー枠を開閉式に・画面ごとの入室制限を追加'
     ];
     function ensureChangelog() {
       const verNum = v => parseFloat(String(v).replace(/^Ver\./, '')) || 0;
@@ -1036,10 +1052,12 @@
       editors: [],          // 編集メンバー {id, name, passHash, active}
       adminPassHash: '',    // 管理者パスワードのハッシュ（空＝未設定）
       authEnabled: false,   // パスワード制のON/OFF
-      editLog: []           // 編集履歴 {ts, actor, action, detail}
+      editLog: [],          // 編集履歴 {ts, actor, action, detail}
+      pageAccess: { participants: { restricted: false, allowed: [] }, schedule: { restricted: false, allowed: [] }, input: { restricted: false, allowed: [] } }  // 画面ごとの入室制限
     };
     let currentSort = 'id';
     let currentPage = 'participants';
+    let appBooted = false;   // 起動直後の初期表示では入室制限を判定しない
     let nextIdNum = 1;
     let currentMode = 'edit';
     let editingParticipantId = null;
@@ -1131,6 +1149,7 @@
           if (typeof data.adminPassHash !== 'string') data.adminPassHash = '';
           if (typeof data.authEnabled !== 'boolean') data.authEnabled = false;
           if (!Array.isArray(data.editLog)) data.editLog = [];
+          data.pageAccess = normalizePageAccess(data.pageAccess);
         }
         // migrate old weeks if any
         if (data.weeks && data.weeks.length && !data.schedules.length) {
@@ -1168,8 +1187,81 @@
       });
       if (data.editLog.length > 1000) data.editLog = data.editLog.slice(-1000);
     }
+    const PAGE_DEFS = [
+      { key: 'participants', label: '参加者一覧' },
+      { key: 'schedule', label: 'スケジュール' },
+      { key: 'input', label: '成績入力' }
+    ];
+    function normalizePageAccess(pa) {
+      const out = {};
+      PAGE_DEFS.forEach(d => {
+        const cur = (pa && pa[d.key]) || {};
+        out[d.key] = { restricted: !!cur.restricted, allowed: Array.isArray(cur.allowed) ? cur.allowed.slice() : [] };
+      });
+      return out;
+    }
+    function pageLabel(key) { const d = PAGE_DEFS.find(x => x.key === key); return d ? d.label : key; }
+    function entrantKey() { return currentEditor ? currentEditor.id : 'admin'; }
+    function pageAccessAllowed(page) {
+      const pa = (data.pageAccess || {})[page];
+      if (!pa || !pa.restricted) return true;
+      return (pa.allowed || []).includes(entrantKey());
+    }
+    function renderPageAccess() {
+      const el = document.getElementById('page-access-list');
+      if (!el) return;
+      data.pageAccess = normalizePageAccess(data.pageAccess);
+      const people = [{ id: 'admin', name: '管理者' }].concat((data.editors || []).filter(e => e.active).map(e => ({ id: e.id, name: e.name })));
+      el.innerHTML = PAGE_DEFS.map(d => {
+        const pa = data.pageAccess[d.key];
+        const chips = pa.restricted
+          ? '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">' + people.map(p =>
+              `<button class="btn btn-sm ${pa.allowed.includes(p.id) ? 'btn-primary' : 'btn-outline'}" onclick="togglePageAllowed('${d.key}','${p.id}')">${escapeHtml(p.name)}${pa.allowed.includes(p.id) ? ' ✓' : ''}</button>`).join('') + '</div>'
+          : '';
+        return `<div style="padding:10px 0;border-bottom:1px solid var(--border)">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+            <span style="font-weight:600">${d.label}</span>
+            <span class="theme-switch" style="flex-shrink:0">
+              <button class="${pa.restricted ? 'active' : ''}" onclick="setPageRestricted('${d.key}', true)">制限する</button>
+              <button class="${!pa.restricted ? 'active' : ''}" onclick="setPageRestricted('${d.key}', false)">制限しない</button>
+            </span>
+          </div>
+          ${chips}
+        </div>`;
+      }).join('');
+    }
+    function setPageRestricted(page, on) {
+      data.pageAccess = normalizePageAccess(data.pageAccess);
+      data.pageAccess[page].restricted = !!on;
+      addLog('入室制限を変更', `${pageLabel(page)}を${on ? '制限あり' : '制限なし'}に`);
+      saveData();
+      renderPageAccess();
+      showToast('保存しました');
+    }
+    function togglePageAllowed(page, key) {
+      data.pageAccess = normalizePageAccess(data.pageAccess);
+      const arr = data.pageAccess[page].allowed;
+      const i = arr.indexOf(key);
+      if (i >= 0) arr.splice(i, 1); else arr.push(key);
+      addLog('入室制限を変更', `${pageLabel(page)}の許可を変更`);
+      saveData();
+      renderPageAccess();
+    }
     function authRequired() { return !!data.authEnabled && (data.editors || []).some(e => e.active); }
+    function updateHeaderIdentity() {
+      const el = document.getElementById('header-editor-name');
+      if (!el) return;
+      if (currentEditor) { el.textContent = '🔑 ' + currentEditor.name; el.classList.remove('hidden'); }
+      else { el.textContent = ''; el.classList.add('hidden'); }
+    }
+    async function syncFromHeader() {
+      const btn = document.getElementById('header-sync-btn');
+      if (btn) btn.classList.add('syncing');
+      try { await cloudSyncNow(); } catch(e) {}
+      if (btn) btn.classList.remove('syncing');
+    }
     function renderAuthBar() {
+      updateHeaderIdentity();
       const bar = document.getElementById('editor-bar');
       if (!bar) return;
       if (currentMode === 'edit' && currentEditor) {
@@ -1253,6 +1345,10 @@
         return;
       }
       if (page !== 'edit-settings') adminUnlocked = false;
+      if (appBooted && currentMode === 'edit' && (page === 'participants' || page === 'schedule' || page === 'input') && !pageAccessAllowed(page)) {
+        showToast('この画面は入室が制限されています');
+        return;
+      }
       currentPage = page;
       document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
       const target = document.getElementById('page-' + page);
@@ -1300,6 +1396,7 @@
         try { renderAdminCard(); } catch(e) {}
         try { renderEditorList(); } catch(e) {}
         try { renderEditLog(); } catch(e) {}
+        try { renderPageAccess(); } catch(e) {}
       }
     }
 
@@ -2746,7 +2843,7 @@
     function confirmReset() {
       const ok = confirm('本当に削除しますか？\n\n※運営代表に許可を得た場合のみ実行してください。\nこの操作は取り消せません。');
       if (!ok) return;
-      data = { participants:[], schedules:[], scores:[], weeklyRanks:{}, versionHistory: data.versionHistory, rankPeriod: { start: '', end: '' }, editors: data.editors || [], adminPassHash: data.adminPassHash || '', authEnabled: !!data.authEnabled, editLog: data.editLog || [] };
+      data = { participants:[], schedules:[], scores:[], weeklyRanks:{}, versionHistory: data.versionHistory, rankPeriod: { start: '', end: '' }, editors: data.editors || [], adminPassHash: data.adminPassHash || '', authEnabled: !!data.authEnabled, editLog: data.editLog || [], pageAccess: normalizePageAccess(null) };
       addLog('全データを削除', '');
       nextIdNum = 1;
       saveData();
@@ -2897,7 +2994,9 @@
     setFontWeight(store.get('navic_font_weight')||'normal');
     goPage('participants');
     if (authRequired()) switchMode('view');
+    updateHeaderIdentity();
     cloudInit();
+    appBooted = true;
 
 
   </script>
