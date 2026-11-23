@@ -730,11 +730,13 @@
       <div class="card">
         <div class="card-title">データ管理</div>
         <div class="help-text mb-2">
-          このアプリのデータは、この端末のブラウザ内にのみ保存されています。<br>
+          データはクラウドに自動保存され、全ての端末で同じ内容が共有されます（この端末の中にも予備を保存しています）。<br>
           ・<strong>エクスポート</strong>：バックアップ用のJSONファイルを保存します。機種変更前に必ず実行してください。<br>
-          ・<strong>インポート</strong>：エクスポートしたファイルからデータを復元します。この端末の現在のデータは上書きされます（メンバー・パスワード・編集履歴は端末側のものが保持されます）。
+          ・<strong>インポート</strong>：エクスポートしたファイルからデータを復元します。現在のデータは上書きされ、クラウドにも反映されて全端末に行き渡ります（メンバー・パスワード・編集履歴は今のものが保持されます）。
         </div>
+        <div id="cloud-status" class="text-sm text-muted mb-2">☁️ クラウド同期：接続中…</div>
         <div style="display:flex;flex-direction:column;gap:8px">
+          <button class="btn btn-outline btn-block" onclick="cloudSyncNow()">🔄 今すぐ同期</button>
           <button class="btn btn-outline btn-block" onclick="exportData()">📤 データをエクスポート</button>
           <button class="btn btn-outline btn-block" onclick="document.getElementById('import-file').click()">📥 データをインポート</button>
           <input type="file" id="import-file" accept=".json" class="hidden" onchange="importData(event)">
@@ -1001,7 +1003,8 @@
       'Ver.2.1　集計期間の設定を編集専用の「編集設定」画面へ移設',
       'Ver.2.2　名前＋個人パスワード制と編集履歴を導入・編集設定を管理者専用に・データ管理を編集設定へ移設',
       'Ver.2.3　データのエクスポート／インポートを共通設定へ移設（閲覧側からデータを受け取り可能に）・全データ削除は編集設定に継続配置',
-      'Ver.2.4　エクスポートを改善：iPhoneでは共有シート（保存・LINE送信）を使い、ダウンロード処理も安定化'
+      'Ver.2.4　エクスポートを改善：iPhoneでは共有シート（保存・LINE送信）を使い、ダウンロード処理も安定化',
+      'Ver.3.0　クラウド同期に対応：開くと最新のデータを読み込み、保存すると自動でクラウドに送られ、全端末で同じデータを共有'
     ];
     function ensureChangelog() {
       const verNum = v => parseFloat(String(v).replace(/^Ver\./, '')) || 0;
@@ -1145,7 +1148,7 @@
         ensureChangelog();
       } catch(e) { try { ensureChangelog(); } catch(_) {} }
     }
-    function saveData() { store.set(STORAGE_KEY, JSON.stringify(data)); }
+    function saveData() { store.set(STORAGE_KEY, JSON.stringify(data)); scheduleCloudPush(); }
     // ========== Auth / Edit Log ==========
     let currentEditor = null;    // ログイン中の編集メンバー {id, name}
     let adminUnlocked = false;   // 編集設定の管理者認証（他の画面へ移ると再ロック）
@@ -1275,6 +1278,7 @@
           setFontWeight(store.get('navic_font_weight') || 'normal');
         } catch(e) {}
         try { renderColorPalette(); } catch(e) {}
+        try { renderCloudStatus(); } catch(e) {}
         try {
           ensureChangelog();
           const hist = data.versionHistory;
@@ -2755,6 +2759,136 @@
       return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
 
+    // ========== Cloud sync (Firestore REST) ==========
+    // データはクラウドにも保存し、全端末で同じ内容を共有する。端末内の保存は予備として残す。
+    // 同期に失敗してもアプリの動作は止めない（オフライン時は端末保存のみで動き、復帰時に送る）。
+    const CLOUD = {
+      apiKey: 'AIzaSyCKbmm0vm2MpO10xUQ6T4L72Hc-izThfeI',
+      url: 'https://firestore.googleapis.com/v1/projects/quiz-king-a5e3f/databases/(default)/documents/quizking/main',
+      metaKey: 'navic_quiz_king_cloud_meta'
+    };
+    let cloudState = 'connecting';   // connecting | online | offline
+    let cloudTimer = null;
+    let cloudApplying = false;       // クラウド取り込み中は再送信しない
+    let cloudPushing = false;
+    let cloudPushAgain = false;
+    let cloudDirty = false;          // 未送信の変更があるか
+
+    function cloudMeta() { try { return JSON.parse(store.get(CLOUD.metaKey) || '{}'); } catch(e) { return {}; } }
+    function setCloudMeta(m) { store.set(CLOUD.metaKey, JSON.stringify(m)); }
+    function setCloudState(st) { cloudState = st; renderCloudStatus(); }
+
+    function renderCloudStatus() {
+      const el = document.getElementById('cloud-status');
+      if (!el) return;
+      const meta = cloudMeta();
+      if (cloudState === 'online') {
+        let text = '☁️ クラウド同期：接続済み（全端末で同じデータを共有しています）';
+        if (meta.updatedAt) text += '<br>最終更新：' + new Date(meta.updatedAt).toLocaleString('ja-JP') + '／' + escapeHtml(meta.updatedBy || '');
+        el.innerHTML = text;
+      } else if (cloudState === 'offline') {
+        el.innerHTML = '📴 クラウド同期：オフライン（この端末に保存しています。ネットに繋がると自動で同期します）';
+      } else {
+        el.innerHTML = '☁️ クラウド同期：接続中…';
+      }
+    }
+
+    async function cloudRequest(method, body) {
+      const res = await fetch(CLOUD.url + '?key=' + CLOUD.apiKey, {
+        method: method,
+        headers: { 'Content-Type': 'application/json' },
+        body: body ? JSON.stringify(body) : undefined
+      });
+      return res;
+    }
+
+    async function cloudPull() {
+      try {
+        const res = await cloudRequest('GET');
+        if (res.status === 404) {
+          // クラウドにまだデータがない：この端末にデータがあれば初回アップロードする
+          setCloudState('online');
+          if (data.participants.length || data.schedules.length || data.editLog.length) {
+            await cloudPush();
+            showToast('この端末のデータをクラウドに上げました');
+          }
+          return;
+        }
+        if (!res.ok) throw new Error('pull failed');
+        const doc = await res.json();
+        const fields = doc.fields || {};
+        const remoteAt = fields.updatedAt && fields.updatedAt.timestampValue;
+        const payload = fields.payload && fields.payload.stringValue;
+        if (!payload || !remoteAt) { setCloudState('online'); return; }
+        const meta = cloudMeta();
+        if (!cloudDirty && (!meta.updatedAt || remoteAt > meta.updatedAt)) {
+          // クラウドの方が新しいので取り込む（端末側の保存を経由して正規化もloadDataに任せる）
+          cloudApplying = true;
+          store.set(STORAGE_KEY, payload);
+          loadData();
+          cloudApplying = false;
+          setCloudMeta({ updatedAt: remoteAt, updatedBy: (fields.updatedBy || {}).stringValue || '' });
+          try { goPage(currentPage); } catch(e) {}
+          showToast('最新のデータを読み込みました');
+        }
+        setCloudState('online');
+      } catch(e) {
+        setCloudState('offline');
+      }
+      renderCloudStatus();
+    }
+
+    async function cloudPush() {
+      if (cloudApplying) return;
+      if (cloudPushing) { cloudPushAgain = true; return; }
+      cloudPushing = true;
+      try {
+        const now = new Date().toISOString();
+        const res = await cloudRequest('PATCH', { fields: {
+          payload: { stringValue: JSON.stringify(data) },
+          updatedAt: { timestampValue: now },
+          updatedBy: { stringValue: actorName() }
+        }});
+        if (!res.ok) throw new Error('push failed');
+        setCloudMeta({ updatedAt: now, updatedBy: actorName() });
+        cloudDirty = false;
+        setCloudState('online');
+      } catch(e) {
+        cloudDirty = true;
+        setCloudState('offline');
+      }
+      cloudPushing = false;
+      renderCloudStatus();
+      if (cloudPushAgain) { cloudPushAgain = false; scheduleCloudPush(); }
+    }
+
+    function scheduleCloudPush() {
+      if (cloudApplying) return;
+      cloudDirty = true;
+      if (cloudTimer) clearTimeout(cloudTimer);
+      cloudTimer = setTimeout(() => { cloudPush(); }, 1200);
+    }
+
+    async function cloudSyncNow() {
+      if (cloudDirty) await cloudPush();
+      await cloudPull();
+      showToast(cloudState === 'online' ? '同期しました' : 'オフラインのため同期できませんでした');
+    }
+
+    async function cloudRefresh() {
+      if (cloudDirty) { await cloudPush(); }
+      await cloudPull();
+    }
+
+    function cloudInit() {
+      renderCloudStatus();
+      cloudPull();
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') cloudRefresh();
+      });
+      window.addEventListener('online', () => { cloudRefresh(); });
+    }
+
     // ========== Init ==========
     loadData();
     setTheme(store.get('navic_theme')||'dark');
@@ -2763,6 +2897,7 @@
     setFontWeight(store.get('navic_font_weight')||'normal');
     goPage('participants');
     if (authRequired()) switchMode('view');
+    cloudInit();
 
 
   </script>
