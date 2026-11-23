@@ -1000,7 +1000,8 @@
       'Ver.2.0　スケジュール編集の区切り線・ボタン色分けと2×2配置・カレンダーのタップ詳細・年間ランキング集計期間の設定・PC／タブレット対応',
       'Ver.2.1　集計期間の設定を編集専用の「編集設定」画面へ移設',
       'Ver.2.2　名前＋個人パスワード制と編集履歴を導入・編集設定を管理者専用に・データ管理を編集設定へ移設',
-      'Ver.2.3　データのエクスポート／インポートを共通設定へ移設（閲覧側からデータを受け取り可能に）・全データ削除は編集設定に継続配置'
+      'Ver.2.3　データのエクスポート／インポートを共通設定へ移設（閲覧側からデータを受け取り可能に）・全データ削除は編集設定に継続配置',
+      'Ver.2.4　エクスポートを改善：iPhoneでは共有シート（保存・LINE送信）を使い、ダウンロード処理も安定化'
     ];
     function ensureChangelog() {
       const verNum = v => parseFloat(String(v).replace(/^Ver\./, '')) || 0;
@@ -2661,14 +2662,28 @@
 
     // ========== Settings ==========
     function exportData() {
-      const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `quiz_king_${localDateStr()}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      showToast('エクスポートしました');
+      const filename = `quiz_king_${localDateStr()}.json`;
+      const file = new File([JSON.stringify(data,null,2)], filename, {type:'application/json'});
+      const downloadFallback = () => {
+        const url = URL.createObjectURL(file);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        // すぐにURLを破棄するとSafariでダウンロードが始まる前にキャンセルされるため、遅らせて破棄する
+        setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 4000);
+        showToast('エクスポートしました');
+      };
+      // iPhone/iPadはプログラムからのダウンロードが不安定なため、共有シート（ファイルに保存／LINE送信）を使う
+      const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      if (isIOS && navigator.canShare && navigator.canShare({ files: [file] })) {
+        navigator.share({ files: [file] })
+          .then(() => showToast('共有しました'))
+          .catch(err => { if (!err || err.name !== 'AbortError') downloadFallback(); });
+        return;
+      }
+      downloadFallback();
     }
     function importData(e) {
       const file = e.target.files[0];
