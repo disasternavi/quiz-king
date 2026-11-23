@@ -678,17 +678,10 @@
       <div class="card">
         <div class="card-title">データ管理</div>
         <div class="help-text mb-2">
-          このアプリのデータは、この端末のブラウザ内にのみ保存されています。<br>
-          ・<strong>エクスポート</strong>：バックアップ用のJSONファイルを保存します。機種変更前に必ず実行してください。<br>
-          ・<strong>インポート</strong>：エクスポートしたファイルからデータを復元します。現在のデータは上書きされます（メンバー・パスワード・編集履歴は端末側のものが保持されます）。<br>
+          データのエクスポート／インポートは「⚙設定」の「データ管理」から行えます。<br>
           ・<strong>全データを削除</strong>：参加者・成績・スケジュールなどすべてを消します。取り消せません（編集履歴とメンバー情報は残ります）。
         </div>
-        <div style="display:flex;flex-direction:column;gap:8px">
-          <button class="btn btn-outline btn-block" onclick="exportData()">📤 データをエクスポート</button>
-          <button class="btn btn-outline btn-block" onclick="document.getElementById('import-file').click()">📥 データをインポート</button>
-          <input type="file" id="import-file" accept=".json" class="hidden" onchange="importData(event)">
-          <button class="btn btn-danger btn-block" onclick="confirmReset()">🗑️ 全データを削除</button>
-        </div>
+        <button class="btn btn-danger btn-block" onclick="confirmReset()">🗑️ 全データを削除</button>
       </div>
     </div>
 
@@ -731,6 +724,20 @@
         <div style="display:flex;align-items:center;gap:10px;margin-top:14px">
           <input type="color" id="accent-custom" value="#006CBA" onchange="setAccent(this.value)" style="width:46px;height:46px;border:none;background:none;padding:0;cursor:pointer">
           <span class="text-sm text-muted">カスタムカラーを自由に選ぶ</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">データ管理</div>
+        <div class="help-text mb-2">
+          このアプリのデータは、この端末のブラウザ内にのみ保存されています。<br>
+          ・<strong>エクスポート</strong>：バックアップ用のJSONファイルを保存します。機種変更前に必ず実行してください。<br>
+          ・<strong>インポート</strong>：エクスポートしたファイルからデータを復元します。この端末の現在のデータは上書きされます（メンバー・パスワード・編集履歴は端末側のものが保持されます）。
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <button class="btn btn-outline btn-block" onclick="exportData()">📤 データをエクスポート</button>
+          <button class="btn btn-outline btn-block" onclick="document.getElementById('import-file').click()">📥 データをインポート</button>
+          <input type="file" id="import-file" accept=".json" class="hidden" onchange="importData(event)">
         </div>
       </div>
 
@@ -992,7 +999,8 @@
       'Ver.1.9　保存まわりを根本修正（書き込み不可の環境でも選択表示・保存・反映が止まらないように）・並び替えを端末標準UIに',
       'Ver.2.0　スケジュール編集の区切り線・ボタン色分けと2×2配置・カレンダーのタップ詳細・年間ランキング集計期間の設定・PC／タブレット対応',
       'Ver.2.1　集計期間の設定を編集専用の「編集設定」画面へ移設',
-      'Ver.2.2　名前＋個人パスワード制と編集履歴を導入・編集設定を管理者専用に・データ管理を編集設定へ移設'
+      'Ver.2.2　名前＋個人パスワード制と編集履歴を導入・編集設定を管理者専用に・データ管理を編集設定へ移設',
+      'Ver.2.3　データのエクスポート／インポートを共通設定へ移設（閲覧側からデータを受け取り可能に）・全データ削除は編集設定に継続配置'
     ];
     function ensureChangelog() {
       const verNum = v => parseFloat(String(v).replace(/^Ver\./, '')) || 0;
