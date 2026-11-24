@@ -57,6 +57,7 @@
     .header h1 { font-size: 1.05rem; font-weight: 700; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .syncing { animation: spin 1s linear infinite; }
+    .sub-btn.tab-locked { opacity: .45; }
     .header-btn {
       background: none; border: none; color: var(--primary);
       font-size: .85rem; font-weight: 600; cursor: pointer; padding: 6px 8px;
@@ -626,6 +627,14 @@
 
     <!-- 設定 -->
     <!-- 編集設定（編集モード専用） -->
+    <!-- 入室できる編集画面がない場合の受け皿 -->
+    <div id="page-noaccess" class="page">
+      <div class="card">
+        <div class="card-title">🔑 入室できる画面がありません</div>
+        <div class="text-sm text-muted">あなたのアカウントでは、編集画面のいずれにも入室が許可されていません。管理者に確認してください。</div>
+      </div>
+    </div>
+
     <div id="page-edit-settings" class="page">
       <div class="card">
         <div class="card-title">年間ランキングの集計期間</div>
@@ -709,7 +718,7 @@
 
     <div id="page-settings" class="page">
       <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
-        <button class="close-btn" style="font-size:1.5rem" onclick="switchMode('edit')" title="閉じる">×</button>
+        <button class="close-btn" style="font-size:1.5rem" onclick="closeSettings()" title="閉じる">×</button>
       </div>
       <div class="card">
         <div class="card-title">画面の明るさ</div>
@@ -1020,7 +1029,8 @@
       'Ver.2.3　データのエクスポート／インポートを共通設定へ移設（閲覧側からデータを受け取り可能に）・全データ削除は編集設定に継続配置',
       'Ver.2.4　エクスポートを改善：iPhoneでは共有シート（保存・LINE送信）を使い、ダウンロード処理も安定化',
       'Ver.3.0　クラウド同期に対応：開くと最新のデータを読み込み、保存すると自動でクラウドに送られ、全端末で同じデータを共有',
-      'Ver.3.1　書き出し/読み込みを編集設定へ集約・同期ボタンをヘッダーの↻に集約しログイン中の名前を表示・管理者/メンバー枠を開閉式に・画面ごとの入室制限を追加'
+      'Ver.3.1　書き出し/読み込みを編集設定へ集約・同期ボタンをヘッダーの↻に集約しログイン中の名前を表示・管理者/メンバー枠を開閉式に・画面ごとの入室制限を追加',
+      'Ver.3.2　設定の×で元の画面に戻るよう修正（未ログイン時にログイン画面が出る不具合）・パスワードが必要なタブに🔑表示・入室できないタブを暗く表示・全画面が制限されたメンバー向けの案内画面を追加'
     ];
     function ensureChangelog() {
       const verNum = v => parseFloat(String(v).replace(/^Ver\./, '')) || 0;
@@ -1060,6 +1070,7 @@
     let appBooted = false;   // 起動直後の初期表示では入室制限を判定しない
     let nextIdNum = 1;
     let currentMode = 'edit';
+    let settingsReturn = 'view';   // 設定を開く前のモード（×で戻る先）
     let editingParticipantId = null;
     let editingScheduleId = null;
     let currentWeeklyRankWeekId = null;
@@ -1202,6 +1213,11 @@
     }
     function pageLabel(key) { const d = PAGE_DEFS.find(x => x.key === key); return d ? d.label : key; }
     function entrantKey() { return currentEditor ? currentEditor.id : 'admin'; }
+    function firstAllowedEditPage() {
+      const pages = ['participants', 'schedule', 'input'];
+      for (const p of pages) if (pageAccessAllowed(p)) return p;
+      return 'noaccess';
+    }
     function pageAccessAllowed(page) {
       const pa = (data.pageAccess || {})[page];
       if (!pa || !pa.restricted) return true;
@@ -1260,8 +1276,27 @@
       try { await cloudSyncNow(); } catch(e) {}
       if (btn) btn.classList.remove('syncing');
     }
+    // タブの状態表示：パスワードが必要なタブに🔑、今の入室者では入れないタブを暗くする
+    function renderSubNavState() {
+      const editBtn = document.querySelector('.mode-btn[data-mode="edit"]');
+      if (editBtn) editBtn.textContent = '編集' + (authRequired() ? ' 🔑' : '');
+      const gate = !!data.authEnabled && !!data.adminPassHash;
+      document.querySelectorAll('#sub-edit .sub-btn').forEach(b => {
+        const page = b.dataset.page;
+        const def = PAGE_DEFS.find(d => d.key === page);
+        if (def) {
+          const pa = (data.pageAccess || {})[page] || {};
+          b.textContent = def.label + (pa.restricted ? ' 🔑' : '');
+          b.classList.toggle('tab-locked', !!pa.restricted && !pageAccessAllowed(page));
+        } else if (page === 'edit-settings') {
+          b.textContent = '編集設定' + (gate ? ' 🔑' : '');
+          b.classList.remove('tab-locked');
+        }
+      });
+    }
     function renderAuthBar() {
       updateHeaderIdentity();
+      try { renderSubNavState(); } catch(e) {}
       const bar = document.getElementById('editor-bar');
       if (!bar) return;
       if (currentMode === 'edit' && currentEditor) {
@@ -1321,6 +1356,7 @@
     function switchMode(mode) {
       if (mode === 'edit' && !currentEditor && authRequired()) { openLoginModal(); return; }
       if (mode === 'settings') {
+        if (currentMode !== 'settings') settingsReturn = currentMode;
         currentMode = 'settings';
         document.getElementById('mode-bar').classList.add('hidden');
         document.getElementById('sub-edit').classList.add('hidden');
@@ -1334,8 +1370,14 @@
       document.querySelectorAll('.mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
       document.getElementById('sub-edit').classList.toggle('hidden', mode !== 'edit');
       document.getElementById('sub-view').classList.toggle('hidden', mode !== 'view');
-      goPage(mode === 'edit' ? 'participants' : 'home');
+      goPage(mode === 'edit' ? firstAllowedEditPage() : 'home');
       renderAuthBar();
+    }
+
+    // 設定の×：開く前にいた画面へ戻る（未ログインでもログイン画面は出さない）
+    function closeSettings() {
+      const back = (settingsReturn === 'edit' && !(authRequired() && !currentEditor)) ? 'edit' : 'view';
+      switchMode(back);
     }
 
     function goPage(page) {
@@ -1386,6 +1428,7 @@
             old.length ? old.map(v => `<div>${escapeHtml(v)}</div>`).join('') : '<div>過去のバージョンはありません</div>';
         } catch(e) {}
       }
+      try { renderSubNavState(); } catch(e) {}
       if (page === 'edit-settings') {
         try {
           const rp = data.rankPeriod || {};
