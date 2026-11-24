@@ -225,7 +225,7 @@
       border: 1px solid var(--border); touch-action: none; user-select: none;
     }
     .rank-item.dragging { opacity: .85; box-shadow: 0 8px 20px rgba(0,0,0,.35); z-index: 10; }
-    .rank-item .handle { color: var(--text-secondary); font-size: 1.1rem; cursor: grab; }
+    .rank-item .handle { color: var(--text-secondary); font-size: 1.1rem; cursor: grab; touch-action: none; padding: 12px 14px; margin: -8px 0; }
     .rank-item .r-num { font-weight: 700; width: 28px; text-align: center; }
     .rank-item .r-name { flex: 1; font-weight: 600; }
     .rank-item .r-pts { color: var(--text-secondary); font-size: .85rem; }
@@ -559,6 +559,7 @@
             <span class="text-sm text-muted">同点なし（全項目同一時のみ同率）</span>
           </div>
           <div class="text-sm text-muted" id="rank-period-label" style="margin-bottom:8px"></div>
+          <div class="text-sm text-muted" style="margin-bottom:8px">評価スコア：参加回数が少ない人が有利になりすぎないよう、仮の成績（正解率50%・10問分）を加えて計算した正解率です。回数を重ねるほど本来の正解率に近づきます。</div>
           <div style="overflow-x:auto">
             <table class="rank-table">
               <thead>
@@ -568,7 +569,7 @@
                   <th>累計</th>
                   <th>回数</th>
                   <th>1位</th>
-                  <th>正解率</th>
+                  <th>評価スコア</th>
                 </tr>
               </thead>
               <tbody id="ranking-body"></tbody>
@@ -609,12 +610,12 @@
       <div class="search-bar">
         <div class="search-box">
           <span style="margin-right:5px;opacity:.6">🔍</span>
-          <input type="text" id="sch-search" placeholder="テーマを検索" oninput="renderScheduleView()">
+          <input type="text" id="sch-search" placeholder="テーマを検索" oninput="calCursor=null;renderScheduleView()">
         </div>
-        <select id="sch-filter-year" onchange="renderScheduleView()" style="width:auto;padding:8px 28px 8px 10px;font-size:.82rem;border-radius:20px">
+        <select id="sch-filter-year" onchange="calCursor=null;renderScheduleView()" style="width:auto;padding:8px 28px 8px 10px;font-size:.82rem;border-radius:20px">
           <option value="">全て</option>
         </select>
-        <select id="sch-filter-month" onchange="renderScheduleView()" style="width:auto;padding:8px 28px 8px 10px;font-size:.82rem;border-radius:20px">
+        <select id="sch-filter-month" onchange="calCursor=null;renderScheduleView()" style="width:auto;padding:8px 28px 8px 10px;font-size:.82rem;border-radius:20px">
           <option value="">全て</option>
           <option value="01">1月</option><option value="02">2月</option><option value="03">3月</option>
           <option value="04">4月</option><option value="05">5月</option><option value="06">6月</option>
@@ -987,7 +988,7 @@
         <h2>この回の順位調整</h2>
         <button class="close-btn" onclick="closeModal('weekly-rank-modal')">×</button>
       </div>
-      <p class="text-sm text-muted mb-2">長押しして上下に動かすと同点の順位を調整できます</p>
+      <p class="text-sm text-muted mb-2">☰ の部分を押したまま上下に動かすと、同点の順位を調整できます（他の部分はスクロールできます）</p>
       <div id="weekly-rank-list"></div>
       <div class="btn-group mt-3">
         <button class="btn btn-primary btn-block" onclick="confirmWeeklyRank()">完了して反映</button>
@@ -1030,7 +1031,8 @@
       'Ver.2.4　エクスポートを改善：iPhoneでは共有シート（保存・LINE送信）を使い、ダウンロード処理も安定化',
       'Ver.3.0　クラウド同期に対応：開くと最新のデータを読み込み、保存すると自動でクラウドに送られ、全端末で同じデータを共有',
       'Ver.3.1　書き出し/読み込みを編集設定へ集約・同期ボタンをヘッダーの↻に集約しログイン中の名前を表示・管理者/メンバー枠を開閉式に・画面ごとの入室制限を追加',
-      'Ver.3.2　設定の×で元の画面に戻るよう修正（未ログイン時にログイン画面が出る不具合）・パスワードが必要なタブに🔑表示・入室できないタブを暗く表示・全画面が制限されたメンバー向けの案内画面を追加'
+      'Ver.3.2　設定の×で元の画面に戻るよう修正（未ログイン時にログイン画面が出る不具合）・パスワードが必要なタブに🔑表示・入室できないタブを暗く表示・全画面が制限されたメンバー向けの案内画面を追加',
+      'Ver.3.3　同点順位調整の増殖バグを修正し☰からのみ並び替え可能に・🔑表示を編集タブと編集設定に限定・スケジュールの延期と削除の位置を入替・累計トップは1人のみ表示・カレンダーに前月／次月ボタンを追加・年間ランキングに評価スコア（ベイズ平均）を導入'
     ];
     function ensureChangelog() {
       const verNum = v => parseFloat(String(v).replace(/^Ver\./, '')) || 0;
@@ -1286,7 +1288,7 @@
         const def = PAGE_DEFS.find(d => d.key === page);
         if (def) {
           const pa = (data.pageAccess || {})[page] || {};
-          b.textContent = def.label + (pa.restricted ? ' 🔑' : '');
+          b.textContent = def.label;
           b.classList.toggle('tab-locked', !!pa.restricted && !pageAccessAllowed(page));
         } else if (page === 'edit-settings') {
           b.textContent = '編集設定' + (gate ? ' 🔑' : '');
@@ -1805,11 +1807,11 @@
             </div>
             <div class="sch-actions">
               <button class="btn btn-sm btn-outline" onclick="openScheduleModal('${s.id}')">編集</button>
-              ${st === 'upcoming' ? `<button class="btn btn-sm btn-postpone" onclick="openPostponeModal('${s.id}')">延期</button>` : '<span></span>'}
+              <button class="btn btn-sm btn-danger" onclick="deleteSchedule('${s.id}')">削除</button>
               ${st === 'cancelled'
                 ? `<button class="btn btn-sm btn-restore" onclick="toggleCancelSchedule('${s.id}')">中止を解除</button>`
                 : (st === 'upcoming' || st === 'ongoing') ? `<button class="btn btn-sm btn-cancel" onclick="toggleCancelSchedule('${s.id}')">中止</button>` : '<span></span>'}
-              <button class="btn btn-sm btn-danger" onclick="deleteSchedule('${s.id}')">削除</button>
+              ${st === 'upcoming' ? `<button class="btn btn-sm btn-postpone" onclick="openPostponeModal('${s.id}')">延期</button>` : '<span></span>'}
             </div>
           </div>
         `;
@@ -1911,6 +1913,7 @@
     }
 
     let schViewMode = 'list';
+    let calCursor = null;   // カレンダーの表示月 {y, m(0-11)}。矢印で移動したときだけ使う
     function setSchViewMode(mode) {
       schViewMode = mode;
       document.getElementById('sch-view-list-btn')?.classList.toggle('active', mode === 'list');
@@ -2048,6 +2051,20 @@
       list.innerHTML = html;
     }
 
+    function moveCalendarMonth(delta) {
+      const now = new Date();
+      let year = now.getFullYear();
+      let month = now.getMonth();
+      const fy = document.getElementById('sch-filter-year')?.value;
+      const fm = document.getElementById('sch-filter-month')?.value;
+      if (fy) year = parseInt(fy, 10);
+      if (fm) month = parseInt(fm, 10) - 1;
+      if (calCursor) { year = calCursor.y; month = calCursor.m; }
+      const d = new Date(year, month + delta, 1);
+      calCursor = { y: d.getFullYear(), m: d.getMonth() };
+      renderScheduleView();
+    }
+
     function renderScheduleCalendar(list, items) {
       const now = new Date();
       let year = now.getFullYear();
@@ -2056,6 +2073,7 @@
       const fm = document.getElementById('sch-filter-month')?.value;
       if (fy) year = parseInt(fy, 10);
       if (fm) month = parseInt(fm, 10) - 1;
+      if (calCursor) { year = calCursor.y; month = calCursor.m; }
 
       const first = new Date(year, month, 1);
       const last = new Date(year, month + 1, 0);
@@ -2074,7 +2092,11 @@
       const rangeMin = allDates[0] || null;
       const rangeMax = allDates[allDates.length - 1] || null;
 
-      let html = `<div style="text-align:center;font-weight:700;margin-bottom:10px">${year}年 ${month+1}月</div>`;
+      let html = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <button class="btn btn-sm btn-outline" onclick="moveCalendarMonth(-1)">◀ 前月</button>
+        <div style="font-weight:700">${year}年 ${month+1}月</div>
+        <button class="btn btn-sm btn-outline" onclick="moveCalendarMonth(1)">次月 ▶</button>
+      </div>`;
       html += `<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;font-size:0.75rem;text-align:center">`;
       ['日','月','火','水','木','金','土'].forEach((d,i) => {
         html += `<div style="color:${i===0?'#ff453a':i===6?'#0a84ff':'var(--text-secondary)'};padding:4px 0">${d}</div>`;
@@ -2315,7 +2337,20 @@
 
     function renderWeeklyRankList() {
       const list = document.getElementById('weekly-rank-list');
-      const ranks = data.weeklyRanks[currentWeeklyRankWeekId] || [];
+      let ranks = data.weeklyRanks[currentWeeklyRankWeekId] || [];
+      // 壊れたデータ（同一人物の重複）があれば、ここで自動修復する
+      const seenPids = new Set();
+      const deduped = ranks.filter(r => {
+        if (!r || seenPids.has(r.participantId)) return false;
+        seenPids.add(r.participantId);
+        return true;
+      });
+      if (deduped.length !== ranks.length) {
+        deduped.forEach((r, i) => { r.rank = i + 1; });
+        data.weeklyRanks[currentWeeklyRankWeekId] = deduped;
+        ranks = deduped;
+        saveData();
+      }
       if (!ranks.length) {
         list.innerHTML = '<p class="text-muted text-sm">参加者がいません。先に成績を保存してください。</p>';
         return;
@@ -2336,61 +2371,80 @@
     }
 
     function setupRankDrag() {
-      document.querySelectorAll('#weekly-rank-list .rank-item').forEach(item => {
-        item.addEventListener('touchstart', onRankTouchStart, {passive:false});
-        item.addEventListener('mousedown', onRankTouchStart);
+      // 並び替えは☰ハンドルからのみ開始する（行の他の場所は通常スクロール）
+      document.querySelectorAll('#weekly-rank-list .rank-item .handle').forEach(h => {
+        h.addEventListener('touchstart', onRankTouchStart, {passive:false});
+        h.addEventListener('mousedown', onRankTouchStart);
       });
     }
 
     function onRankTouchStart(e) {
-      const item = e.currentTarget;
+      // ドラッグ中は新しい開始を無視する。タッチとマウス模倣イベントの
+      // 二重セッションが競合し、同じ人が増殖するバグの原因だった。
+      if (dragState) return;
+      const item = e.currentTarget.closest('.rank-item');
       const list = document.getElementById('weekly-rank-list');
+      if (!item || !list) return;
       const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-      dragState = { item, startY: clientY, originalIdx: [...list.children].indexOf(item), offsetY: 0 };
+      const session = { item, startY: clientY, done: false };
+      dragState = session;
       item.classList.add('dragging');
-      e.preventDefault();
+      if (e.cancelable) e.preventDefault();
 
       const move = (ev) => {
-        if (!dragState) return;
+        if (session.done) return;
+        if (ev.cancelable) ev.preventDefault();
         const y = ev.touches ? ev.touches[0].clientY : ev.clientY;
-        dragState.offsetY = y - dragState.startY;
-        item.style.transform = `translateY(${dragState.offsetY}px)`;
-        const children = [...list.children].filter(c => c !== item);
-        let newIdx = dragState.originalIdx;
-        children.forEach((c,i) => {
-          const rect = c.getBoundingClientRect();
-          const mid = rect.top + rect.height/2;
-          if (y < mid && i < newIdx) newIdx = i;
-          if (y > mid && i >= newIdx) newIdx = i+1;
-        });
-        if (newIdx !== dragState.originalIdx) {
-          const ref = list.children[newIdx] || null;
-          list.insertBefore(item, ref);
-          dragState.originalIdx = [...list.children].indexOf(item);
-          dragState.startY = y;
-          dragState.offsetY = 0;
+        item.style.transform = `translateY(${y - session.startY}px)`;
+        // 指の位置が「他の行の真ん中」を何行越えたかで挿入先を決める
+        const others = [...list.children].filter(c => c !== item);
+        let insertIdx = others.length;
+        for (let i = 0; i < others.length; i++) {
+          const rect = others[i].getBoundingClientRect();
+          if (y < rect.top + rect.height / 2) { insertIdx = i; break; }
+        }
+        if (insertIdx !== [...list.children].indexOf(item)) {
+          list.insertBefore(item, others[insertIdx] || null);
+          session.startY = y;
           item.style.transform = '';
         }
       };
       const up = () => {
-        if (!dragState) return;
-        dragState.item.classList.remove('dragging');
-        dragState.item.style.transform = '';
-        const newOrder = [...list.children].map((el,i) => ({
-          participantId: el.dataset.pid,
-          rank: i+1,
-          points: (data.weeklyRanks[currentWeeklyRankWeekId].find(r=>r.participantId===el.dataset.pid)||{}).points||0
-        }));
-        data.weeklyRanks[currentWeeklyRankWeekId] = newOrder;
-        renderWeeklyRankList();
-        dragState = null;
+        if (session.done) return;
+        session.done = true;
         document.removeEventListener('touchmove', move);
         document.removeEventListener('touchend', up);
+        document.removeEventListener('touchcancel', up);
         document.removeEventListener('mousemove', move);
         document.removeEventListener('mouseup', up);
+        if (dragState === session) dragState = null;
+        item.classList.remove('dragging');
+        item.style.transform = '';
+        // DOMの並びから順位を再構築する。同一人物は最初の1件だけを残し、
+        // DOMに無い参加者は末尾に補う（増殖と消失の両方を防ぐ）
+        const prev = data.weeklyRanks[currentWeeklyRankWeekId] || [];
+        const prevMap = {};
+        prev.forEach(r => { if (r && !prevMap[r.participantId]) prevMap[r.participantId] = r; });
+        const seen = new Set();
+        const newOrder = [];
+        [...list.children].forEach(el => {
+          const pid = el.dataset.pid;
+          if (!pid || seen.has(pid)) return;
+          seen.add(pid);
+          newOrder.push({ participantId: pid, rank: newOrder.length + 1, points: prevMap[pid] ? prevMap[pid].points : 0 });
+        });
+        prev.forEach(r => {
+          if (r && !seen.has(r.participantId)) {
+            seen.add(r.participantId);
+            newOrder.push({ participantId: r.participantId, rank: newOrder.length + 1, points: r.points });
+          }
+        });
+        data.weeklyRanks[currentWeeklyRankWeekId] = newOrder;
+        renderWeeklyRankList();
       };
       document.addEventListener('touchmove', move, {passive:false});
       document.addEventListener('touchend', up);
+      document.addEventListener('touchcancel', up);
       document.addEventListener('mousemove', move);
       document.addEventListener('mouseup', up);
     }
@@ -2436,12 +2490,18 @@
         const r = (list || []).find(x => x.participantId === pid);
         if (r && r.rank === 1) firstPlaces++;
       });
-      let rateSum = 0;
+      let rateSum = 0, totalCorrect = 0, totalQuestions = 0;
       scores.forEach(s => {
         const sch = data.schedules.find(w => w.id === s.weekId);
-        rateSum += (s.correct || 0) / ((sch && sch.isSpecial) ? 10 : 5);
+        const q = (sch && sch.isSpecial) ? 10 : 5;
+        rateSum += (s.correct || 0) / q;
+        totalCorrect += (s.correct || 0);
+        totalQuestions += q;
       });
-      return { count: scores.length, totalPoints, firstPlaces, avgRate: scores.length ? rateSum / scores.length : 0 };
+      // 評価スコア（ベイズ平均）：仮の成績（正解率50%・10問分）を加えてから正解率を出す。
+      // 参加が少ないうちは50%付近に寄り、回数を重ねるほど本来の正解率に近づく。
+      const evalScore = (totalCorrect + 5) / (totalQuestions + 10);
+      return { count: scores.length, totalPoints, firstPlaces, avgRate: scores.length ? rateSum / scores.length : 0, totalCorrect, totalQuestions, evalScore };
     }
     function rankPeriodLabel() {
       const rp = data.rankPeriod || {};
@@ -2477,13 +2537,13 @@
     function renderRanking() {
       const pl = document.getElementById('rank-period-label');
       if (pl) pl.textContent = rankPeriodLabel();
-      // 同点なし：累計pt → 参加回数 → 1位回数 → 正解率 の順で比較。全て同じときだけ同率
+      // 同点なし：累計pt → 参加回数 → 1位回数 → 評価スコア の順で比較。全て同じときだけ同率
       let stats = calcStats().filter(s => s.count > 0);
       stats.sort((a, b) => {
         if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints;
         if (b.count !== a.count) return b.count - a.count;
         if (b.firstPlaces !== a.firstPlaces) return b.firstPlaces - a.firstPlaces;
-        if (b.avgRate !== a.avgRate) return b.avgRate - a.avgRate;
+        if (b.evalScore !== a.evalScore) return b.evalScore - a.evalScore;
         return 0;
       });
 
@@ -2499,7 +2559,7 @@
         } else {
           const prev = stats[i - 1];
           const same = prev.totalPoints === s.totalPoints && prev.count === s.count &&
-            prev.firstPlaces === s.firstPlaces && prev.avgRate === s.avgRate;
+            prev.firstPlaces === s.firstPlaces && prev.evalScore === s.evalScore;
           rank = same ? rank : i + 1;
         }
         s.rank = rank;
@@ -2511,7 +2571,7 @@
           <td><strong>${s.totalPoints}</strong></td>
           <td>${s.count}</td>
           <td>${s.firstPlaces}</td>
-          <td>${(s.avgRate*100).toFixed(1)}%</td>
+          <td>${(s.evalScore*100).toFixed(1)}%</td>
         </tr>
       `).join('');
     }
@@ -2572,7 +2632,7 @@
         if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints;
         if (b.count !== a.count) return b.count - a.count;
         if (b.firstPlaces !== a.firstPlaces) return b.firstPlaces - a.firstPlaces;
-        return b.avgRate - a.avgRate;
+        return b.evalScore - a.evalScore;
       });
       const doneList = data.schedules.filter(s => isScheduleStarted(s)).sort((a,b) => b.number - a.number);
       const latest = doneList[0];
@@ -2619,13 +2679,9 @@
         const maxQ = sch && sch.isSpecial ? 10 : 5;
         if (s.correct === maxQ) totalPerfect++;
       });
-      // トップタイ（累計ptが同点なら複数）
+      // 累計トップは、同点でも1位の1人のみ表示する
       let topNames = '-';
-      if (top.length) {
-        const topPts = top[0].totalPoints;
-        const ties = top.filter(s => s.totalPoints === topPts);
-        topNames = ties.map(t => t.name).join(' / ');
-      }
+      if (top.length) topNames = top[0].name;
 
       const hpl = document.getElementById('home-period-label');
       if (hpl) hpl.textContent = rankPeriodLabel();
